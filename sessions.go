@@ -35,8 +35,12 @@ func LoadSessions() ([]Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	root := filepath.Join(home, ".claude", "projects")
+	return loadSessionsFromRoot(filepath.Join(home, ".claude", "projects"))
+}
 
+// loadSessionsFromRoot walks any root that uses the projects/<encoded>/<id>.jsonl
+// layout (the real Claude Code projects dir, or the trash dir).
+func loadSessionsFromRoot(root string) ([]Session, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err

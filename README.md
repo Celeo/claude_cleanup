@@ -9,14 +9,16 @@
 
 A terminal UI for browsing and cleaning up old [Claude Code](https://claude.com/claude-code) conversations.
 
-Claude Code stores every session as a `.jsonl` file under `~/.claude/projects/`. Over time those pile up. `claude_cleanup` lists them, lets you scroll through any conversation in the terminal, and (eventually) lets you delete the ones you don't want anymore.
+Claude Code stores every session as a `.jsonl` file under `~/.claude/projects/`. Over time those pile up. `claude_cleanup` lists them, lets you scroll through any conversation in the terminal, and lets you move the ones you don't want into a trash directory (with restore).
 
 ## Features
 
 - Lists every Claude Code session on disk, newest first, with the same title Claude Code itself shows in `/recent` (custom title, then AI-generated title, then last prompt, then first prompt).
 - Built-in fuzzy filter over titles — press `/` and start typing.
 - Scrollable viewport of the conversation, with tool calls, internal thinking, and command noise stripped out so it reads like the chat you actually had.
-- Confirmation prompt before deletion. (Deletion itself is currently stubbed — see [Status](#status).)
+- Two modes you can toggle with `t`: a red **delete** mode that moves a conversation into the trash, and a green **trash** mode that lists trashed conversations and lets you restore any of them.
+- Confirmation prompt before either action.
+- Non-destructive: "deletion" is really a rename into `~/.local/share/claude_cleanup/trash/`, preserving the original project layout so a restore puts the file (and any sibling overflow directory) back exactly where Claude Code expects it.
 
 ## Install
 
@@ -41,15 +43,22 @@ Launch it and you get three screens:
 
 | Screen | Keys |
 | --- | --- |
-| **List** | `↑`/`↓` move, `/` filter, `enter` open, `q` quit |
-| **Conversation** | `↑`/`↓`/`pgup`/`pgdn` scroll, `esc` back, `d` delete |
+| **List** | `↑`/`↓` move, `/` filter, `enter` open, `t` toggle delete/trash mode, `q` quit |
+| **Conversation** (delete mode) | `↑`/`↓`/`pgup`/`pgdn` scroll, `esc` back, `d` delete |
+| **Conversation** (trash mode) | `↑`/`↓`/`pgup`/`pgdn` scroll, `esc` back, `r` restore |
 | **Confirm** | `←`/`→` or `tab` toggle, `enter` confirm, `esc`/`n` cancel |
 
-`ctrl+c` quits from anywhere.
+`ctrl+c` quits from anywhere. The list opens in delete mode (red accents); press `t` to switch to trash mode (green accents) and back.
 
-## Status
+## Where deleted conversations go
 
-Early. The TUI works end-to-end, but the deletion step is a stub — confirming a delete currently just clears the selection and returns you to the list. Wiring up the actual `os.Remove` is the next step.
+Deletes are non-destructive renames into:
+
+```
+~/.local/share/claude_cleanup/trash/<encoded-project>/<sessionId>.jsonl
+```
+
+The directory layout mirrors `~/.claude/projects/`, so a restore is a plain `rename` back to the original location. If the session has a sibling overflow directory (`<sessionId>/`, used by Claude Code to spill large tool outputs), it moves with the transcript.
 
 ## Built with
 

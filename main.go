@@ -19,42 +19,72 @@ const (
 	screenConfirm
 )
 
+type mode int
+
+const (
+	modeDelete mode = iota
+	modeTrash
+)
+
 type rootModel struct {
 	screen screen
+	mode   mode
 
 	list     list.Model
 	viewport viewport.Model
-	current  *Session // session being viewed / targeted for deletion
+	current  *Session // session being viewed / targeted
 
 	width, height int
-	statusMsg     string // ephemeral feedback (e.g. "deletion stubbed")
-	confirmYes    bool   // selection in the confirm dialog (true = delete)
+	statusMsg     string
+	confirmYes    bool // selection in the confirm dialog (true = act)
 }
 
 func newRootModel() (rootModel, error) {
-	sessions, err := LoadSessions()
-	if err != nil {
-		return rootModel{}, err
-	}
-
-	items := make([]list.Item, 0, len(sessions))
-	for _, s := range sessions {
-		items = append(items, sessionItem{Session: s})
-	}
-
 	delegate := list.NewDefaultDelegate()
-	l := list.New(items, delegate, 0, 0)
-	l.Title = "Claude Code Conversations"
+	l := list.New(nil, delegate, 0, 0)
 	l.SetShowStatusBar(true)
 	l.SetFilteringEnabled(true)
 
 	vp := viewport.New(viewport.WithWidth(0), viewport.WithHeight(0))
 
-	return rootModel{
+	m := rootModel{
 		screen:   screenList,
+		mode:     modeDelete,
 		list:     l,
 		viewport: vp,
-	}, nil
+	}
+	if err := m.reloadList(); err != nil {
+		return rootModel{}, err
+	}
+	return m, nil
+}
+
+// reloadList re-reads sessions for the current mode and updates the list's
+// items, title, and title styling.
+func (m *rootModel) reloadList() error {
+	var (
+		sessions []Session
+		err      error
+	)
+	switch m.mode {
+	case modeTrash:
+		sessions, err = LoadTrash()
+		m.list.Title = "Trash — Restore Deleted Conversations"
+		m.list.Styles.Title = listTitleRestoreStyle
+	default:
+		sessions, err = LoadSessions()
+		m.list.Title = "Claude Code Conversations"
+		m.list.Styles.Title = listTitleDeleteStyle
+	}
+	if err != nil {
+		return err
+	}
+	items := make([]list.Item, 0, len(sessions))
+	for _, s := range sessions {
+		items = append(items, sessionItem{Session: s})
+	}
+	m.list.SetItems(items)
+	return nil
 }
 
 func (m rootModel) Init() tea.Cmd {
@@ -66,8 +96,8 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.list.SetSize(msg.Width, msg.Height)
-		// leave room for a header + footer line around the viewport
+		// leave one line under the list for the mode-aware key hint
+		m.list.SetSize(msg.Width, msg.Height-1)
 		m.viewport.SetWidth(msg.Width)
 		m.viewport.SetHeight(msg.Height - 4)
 		if m.current != nil {
@@ -76,7 +106,6 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
-		// Global escape hatch.
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
@@ -95,11 +124,21 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m rootModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyPressMsg); ok {
-		// Don't intercept keys while the list's filter input is active.
 		if m.list.FilterState() != list.Filtering {
 			switch key.String() {
 			case "q":
 				return m, tea.Quit
+			case "t":
+				if m.mode == modeDelete {
+					m.mode = modeTrash
+				} else {
+					m.mode = modeDelete
+				}
+				m.statusMsg = ""
+				if err := m.reloadList(); err != nil {
+					m.statusMsg = "failed to reload: " + err.Error()
+				}
+				return m, nil
 			case "enter":
 				if item, ok := m.list.SelectedItem().(sessionItem); ok {
 					s := item.Session
@@ -126,9 +165,17 @@ func (m rootModel) updateViewport(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.screen = screenList
 			return m, nil
 		case "d", "delete":
-			m.screen = screenConfirm
-			m.confirmYes = false // default to safe option
-			return m, nil
+			if m.mode == modeDelete {
+				m.screen = screenConfirm
+				m.confirmYes = false
+				return m, nil
+			}
+		case "r":
+			if m.mode == modeTrash {
+				m.screen = screenConfirm
+				m.confirmYes = false
+				return m, nil
+			}
 		}
 	}
 	var cmd tea.Cmd
@@ -151,10 +198,27 @@ func (m rootModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		if m.confirmYes && m.current != nil {
-			deleteSession(*m.current)
-			m.statusMsg = fmt.Sprintf("Stubbed deletion of %s", m.current.Title)
+			var (
+				err  error
+				verb string
+			)
+			if m.mode == modeTrash {
+				err = RestoreFromTrash(*m.current)
+				verb = "Restored"
+			} else {
+				err = MoveToTrash(*m.current)
+				verb = "Moved to trash:"
+			}
+			if err != nil {
+				m.statusMsg = "error: " + err.Error()
+			} else {
+				m.statusMsg = fmt.Sprintf("%s %s", verb, m.current.Title)
+			}
 			m.current = nil
 			m.screen = screenList
+			if reloadErr := m.reloadList(); reloadErr != nil && m.statusMsg == "" {
+				m.statusMsg = "reload error: " + reloadErr.Error()
+			}
 			return m, nil
 		}
 		m.screen = screenViewport
@@ -179,11 +243,20 @@ func (m rootModel) View() tea.View {
 }
 
 func (m rootModel) listView() string {
-	v := m.list.View()
+	listView := m.list.View()
+	hint := m.listFooterHint()
+	footer := footerStyle.Render(hint)
 	if m.statusMsg != "" {
-		v = footerStyle.Render(m.statusMsg) + "\n" + v
+		footer = footerStyle.Render(m.statusMsg+"  ·  "+hint)
 	}
-	return v
+	return lipgloss.JoinVertical(lipgloss.Left, listView, footer)
+}
+
+func (m rootModel) listFooterHint() string {
+	if m.mode == modeTrash {
+		return "enter open · t back to active · / filter · q quit  [TRASH]"
+	}
+	return "enter open · t view trash · / filter · q quit  [DELETE]"
 }
 
 func (m rootModel) viewView() string {
@@ -191,10 +264,18 @@ func (m rootModel) viewView() string {
 	if m.current != nil {
 		title = m.current.Title
 	}
-	header := headerStyle.Width(m.width).Render(title)
-	footer := footerStyle.Width(m.width).Render(
-		"↑/↓ scroll · esc back · d delete · ctrl+c quit",
-	)
+	var header, footer string
+	if m.mode == modeTrash {
+		header = headerRestoreStyle.Width(m.width).Render("[TRASH] " + title)
+		footer = footerStyle.Width(m.width).Render(
+			"↑/↓ scroll · esc back · r restore · ctrl+c quit",
+		)
+	} else {
+		header = headerDeleteStyle.Width(m.width).Render(title)
+		footer = footerStyle.Width(m.width).Render(
+			"↑/↓ scroll · esc back · d delete · ctrl+c quit",
+		)
+	}
 	return lipgloss.JoinVertical(lipgloss.Left, header, m.viewport.View(), footer)
 }
 
@@ -204,16 +285,40 @@ func (m rootModel) confirmView() string {
 		title = m.current.Title
 	}
 
-	yes := confirmDangerStyle.Render(" Delete ")
-	no := confirmSafeStyle.Render(" Cancel ")
-	if m.confirmYes {
-		yes = confirmDangerFocused.Render(" Delete ")
+	var (
+		prompt     string
+		actionText string
+		boxStyle   lipgloss.Style
+		titleStyle lipgloss.Style
+		actStyle   lipgloss.Style
+		actFocused lipgloss.Style
+	)
+	if m.mode == modeTrash {
+		prompt = "Restore this conversation?"
+		actionText = " Restore "
+		boxStyle = confirmBoxRestoreStyle
+		titleStyle = confirmTitleRestoreStyle
+		actStyle = confirmRestoreActionStyle
+		actFocused = confirmRestoreActionFocused
 	} else {
-		no = confirmSafeFocused.Render(" Cancel ")
+		prompt = "Move this conversation to the trash?"
+		actionText = " Delete "
+		boxStyle = confirmBoxDeleteStyle
+		titleStyle = confirmTitleDeleteStyle
+		actStyle = confirmDeleteActionStyle
+		actFocused = confirmDeleteActionFocused
+	}
+
+	yes := actStyle.Render(actionText)
+	no := confirmCancelStyle.Render(" Cancel ")
+	if m.confirmYes {
+		yes = actFocused.Render(actionText)
+	} else {
+		no = confirmCancelFocused.Render(" Cancel ")
 	}
 
 	body := lipgloss.JoinVertical(lipgloss.Center,
-		confirmTitleStyle.Render("Delete this conversation?"),
+		titleStyle.Render(prompt),
 		"",
 		lipgloss.NewStyle().Faint(true).Render(truncate(title, 60)),
 		"",
@@ -222,7 +327,7 @@ func (m rootModel) confirmView() string {
 		footerStyle.Render("←/→ switch · enter confirm · esc cancel"),
 	)
 
-	box := confirmBoxStyle.Render(body)
+	box := boxStyle.Render(body)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
@@ -259,12 +364,6 @@ func renderConversation(path string, width int) string {
 		}
 	}
 	return b.String()
-}
-
-// deleteSession is the stubbed deletion target. Wired up to a confirmation in
-// the TUI but does not actually delete anything yet.
-func deleteSession(s Session) {
-	_ = s
 }
 
 func main() {
