@@ -11,11 +11,11 @@ import (
 )
 
 type Session struct {
-	ID          string
-	Path        string
-	ProjectDir  string
-	Title       string
-	ModifiedAt  time.Time
+	ID         string
+	Path       string
+	ProjectDir string
+	Title      string
+	ModifiedAt time.Time
 }
 
 // sessionItem wraps Session for the bubbles list (which expects Title() — the

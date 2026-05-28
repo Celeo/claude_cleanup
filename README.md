@@ -1,11 +1,11 @@
 # claude_cleanup
 
+[![CI](https://github.com/celeo/claude_cleanup/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/celeo/claude_cleanup/actions/workflows/ci.yml)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/celeo/claude_cleanup)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Built with Bubble Tea](https://img.shields.io/badge/built%20with-Bubble%20Tea-FF75B7)](https://github.com/charmbracelet/bubbletea)
 [![Made with Charm](https://img.shields.io/badge/made%20with-Charm-pink)](https://charm.sh)
 [![Go Report Card](https://goreportcard.com/badge/github.com/celeo/claude_cleanup)](https://goreportcard.com/report/github.com/celeo/claude_cleanup)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
 
 A terminal UI for browsing and cleaning up old [Claude Code](https://claude.com/claude-code) conversations.
 

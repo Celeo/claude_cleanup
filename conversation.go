@@ -28,10 +28,10 @@ func LoadConversation(path string) ([]convoMessage, error) {
 	scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024)
 	for scanner.Scan() {
 		var rec struct {
-			Type       string `json:"type"`
-			IsMeta     bool   `json:"isMeta"`
-			IsSidechain bool  `json:"isSidechain"`
-			Message    struct {
+			Type        string `json:"type"`
+			IsMeta      bool   `json:"isMeta"`
+			IsSidechain bool   `json:"isSidechain"`
+			Message     struct {
 				Role    string          `json:"role"`
 				Content json.RawMessage `json:"content"`
 			} `json:"message"`
@@ -90,7 +90,9 @@ var (
 	systemReminderRe = regexp.MustCompile(`(?s)<system-reminder>.*?</system-reminder>`)
 	caveatRe         = regexp.MustCompile(`(?s)<local-command-caveat>.*?</local-command-caveat>`)
 	cmdStdoutRe      = regexp.MustCompile(`(?s)<local-command-stdout>.*?</local-command-stdout>`)
-	cmdNameRe        = regexp.MustCompile(`(?s)<command-(name|message|args)>.*?</command-\1>`)
+	cmdNameRe        = regexp.MustCompile(`(?s)<command-name>.*?</command-name>`)
+	cmdMessageRe     = regexp.MustCompile(`(?s)<command-message>.*?</command-message>`)
+	cmdArgsRe        = regexp.MustCompile(`(?s)<command-args>.*?</command-args>`)
 )
 
 // stripCommandTags removes the noisy local-command/system-reminder wrappers
@@ -101,5 +103,7 @@ func stripCommandTags(s string) string {
 	s = caveatRe.ReplaceAllString(s, "")
 	s = cmdStdoutRe.ReplaceAllString(s, "")
 	s = cmdNameRe.ReplaceAllString(s, "")
+	s = cmdMessageRe.ReplaceAllString(s, "")
+	s = cmdArgsRe.ReplaceAllString(s, "")
 	return strings.TrimSpace(s)
 }

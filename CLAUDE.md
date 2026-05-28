@@ -39,6 +39,10 @@ These are the only record types currently consumed; the file contains many more 
 - Key messages are `tea.KeyPressMsg`, not `tea.KeyMsg`.
 - `viewport.New` takes functional options (`viewport.WithWidth`, `WithHeight`), not positional args.
 
+## Version control
+
+This repo is managed with [jj](https://github.com/jj-vcs/jj) on top of git. The git remote and branch names still work for CI and GitHub URLs, but day-to-day commands the user runs are `jj` (`jj st`, `jj new`, `jj describe`, etc.) — don't suggest raw `git commit` / `git rebase` workflows.
+
 ## Conventions
 
 - Project directory names under `~/.claude/projects/` are the original cwd with `/` replaced by `-`. The decode in `decodeProjectDir` is best-effort (lossy: real dashes in the original path are indistinguishable from separators) — don't rely on it for anything beyond display.
