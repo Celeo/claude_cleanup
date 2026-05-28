@@ -22,6 +22,31 @@ Claude Code stores every session as a `.jsonl` file under `~/.claude/projects/`.
 
 ## Install
 
+### Download a release binary
+
+Pre-built binaries for each release are attached to the [latest release](https://github.com/celeo/claude_cleanup/releases/latest). The asset names are stable across releases, so the URLs below always point at the newest build:
+
+```sh
+# Linux x86_64
+curl -L -o claude_cleanup https://github.com/celeo/claude_cleanup/releases/latest/download/claude_cleanup-linux-amd64
+
+# Linux arm64
+curl -L -o claude_cleanup https://github.com/celeo/claude_cleanup/releases/latest/download/claude_cleanup-linux-arm64
+
+# macOS Intel
+curl -L -o claude_cleanup https://github.com/celeo/claude_cleanup/releases/latest/download/claude_cleanup-darwin-amd64
+
+# macOS Apple Silicon
+curl -L -o claude_cleanup https://github.com/celeo/claude_cleanup/releases/latest/download/claude_cleanup-darwin-arm64
+
+chmod +x claude_cleanup
+./claude_cleanup
+```
+
+Windows is not currently supported — the tool assumes Unix-style paths for both Claude Code's data directory and its own trash directory.
+
+### Build from source
+
 Requires Go 1.26 or newer.
 
 ```sh
