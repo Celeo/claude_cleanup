@@ -37,6 +37,12 @@ type rootModel struct {
 	width, height int
 	statusMsg     string
 	confirmYes    bool // selection in the confirm dialog (true = act)
+
+	// fatalErr is set when an action (move/restore/reload) fails. When set,
+	// the Update returns tea.Quit and main() prints the error to stderr and
+	// exits non-zero — we never want a failed delete to look like a successful
+	// one in the UI.
+	fatalErr error
 }
 
 func newRootModel() (rootModel, error) {
@@ -45,7 +51,7 @@ func newRootModel() (rootModel, error) {
 	l.SetShowStatusBar(true)
 	l.SetFilteringEnabled(true)
 
-	vp := viewport.New(viewport.WithWidth(0), viewport.WithHeight(0))
+	vp := viewport.New()
 
 	m := rootModel{
 		screen:   screenList,
@@ -124,6 +130,8 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m rootModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyPressMsg); ok {
+		// Suppress single-letter hotkeys while the user is typing into the filter,
+		// otherwise "t" / "q" / "enter" would steal keystrokes from the filter input.
 		if m.list.FilterState() != list.Filtering {
 			switch key.String() {
 			case "q":
@@ -161,7 +169,7 @@ func (m rootModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m rootModel) updateViewport(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyPressMsg); ok {
 		switch key.String() {
-		case "esc", "backspace", "q", "h":
+		case "esc", "backspace":
 			m.screen = screenList
 			return m, nil
 		case "d", "delete":
@@ -199,25 +207,26 @@ func (m rootModel) updateConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if m.confirmYes && m.current != nil {
 			var (
-				err  error
-				verb string
+				err   error
+				okMsg string
 			)
 			if m.mode == modeTrash {
 				err = RestoreFromTrash(*m.current)
-				verb = "Restored"
+				okMsg = fmt.Sprintf("Restored %s", m.current.Title)
 			} else {
 				err = MoveToTrash(*m.current)
-				verb = "Moved to trash:"
+				okMsg = fmt.Sprintf("Moved %s to trash", m.current.Title)
 			}
 			if err != nil {
-				m.statusMsg = "error: " + err.Error()
-			} else {
-				m.statusMsg = fmt.Sprintf("%s %s", verb, m.current.Title)
+				m.fatalErr = err
+				return m, tea.Quit
 			}
+			m.statusMsg = okMsg
 			m.current = nil
 			m.screen = screenList
-			if reloadErr := m.reloadList(); reloadErr != nil && m.statusMsg == "" {
-				m.statusMsg = "reload error: " + reloadErr.Error()
+			if reloadErr := m.reloadList(); reloadErr != nil {
+				m.fatalErr = reloadErr
+				return m, tea.Quit
 			}
 			return m, nil
 		}
@@ -239,6 +248,7 @@ func (m rootModel) View() tea.View {
 	}
 	v := tea.NewView(s)
 	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
 	return v
 }
 
@@ -247,7 +257,7 @@ func (m rootModel) listView() string {
 	hint := m.listFooterHint()
 	footer := footerStyle.Render(hint)
 	if m.statusMsg != "" {
-		footer = footerStyle.Render(m.statusMsg+"  ·  "+hint)
+		footer = footerStyle.Render(m.statusMsg + "  ·  " + hint)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, listView, footer)
 }
@@ -367,14 +377,23 @@ func renderConversation(path string, width int) string {
 }
 
 func main() {
+	if err := EnsureTrashDir(); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create trash directory: %v\n", err)
+		os.Exit(1)
+	}
 	m, err := newRootModel()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to load sessions: %v\n", err)
 		os.Exit(1)
 	}
 	p := tea.NewProgram(m)
-	if _, err := p.Run(); err != nil {
+	final, err := p.Run()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Alas, there's been an error: %v\n", err)
+		os.Exit(1)
+	}
+	if rm, ok := final.(rootModel); ok && rm.fatalErr != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", rm.fatalErr)
 		os.Exit(1)
 	}
 }

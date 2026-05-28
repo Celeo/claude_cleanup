@@ -11,9 +11,6 @@ var (
 			Bold(true).
 			Foreground(lipgloss.Color("#A78BFA"))
 
-	bodyStyle = lipgloss.NewStyle().
-			PaddingLeft(2)
-
 	footerStyle = lipgloss.NewStyle().
 			Faint(true).
 			Padding(0, 1)

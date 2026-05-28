@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -17,6 +18,18 @@ func trashRoot() (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, ".local", "share", "claude_cleanup", "trash"), nil
+}
+
+// EnsureTrashDir creates the trash root directory tree if it doesn't already
+// exist. Called at startup so deletes can't fail just because the parent
+// directories were never made, and so permission errors surface immediately
+// rather than on the first delete attempt.
+func EnsureTrashDir() error {
+	root, err := trashRoot()
+	if err != nil {
+		return err
+	}
+	return os.MkdirAll(root, 0o755)
 }
 
 func claudeProjectsRoot() (string, error) {
@@ -56,12 +69,28 @@ func moveSession(s Session, destRoot string) error {
 	if _, err := os.Stat(jsonlDest); err == nil {
 		return errors.New("destination already exists: " + jsonlDest)
 	}
+
+	sibling := filepath.Join(filepath.Dir(s.Path), s.ID)
+	siblingDest := filepath.Join(destDir, s.ID)
+	hasSibling := false
+	if info, err := os.Stat(sibling); err == nil && info.IsDir() {
+		hasSibling = true
+		if _, err := os.Stat(siblingDest); err == nil {
+			return errors.New("destination already exists: " + siblingDest)
+		}
+	}
+
 	if err := os.Rename(s.Path, jsonlDest); err != nil {
 		return err
 	}
-	sibling := filepath.Join(filepath.Dir(s.Path), s.ID)
-	if info, err := os.Stat(sibling); err == nil && info.IsDir() {
-		_ = os.Rename(sibling, filepath.Join(destDir, s.ID))
+	if hasSibling {
+		if err := os.Rename(sibling, siblingDest); err != nil {
+			// Roll the transcript rename back so we don't leave a half-moved session.
+			if rbErr := os.Rename(jsonlDest, s.Path); rbErr != nil {
+				return fmt.Errorf("sibling rename failed: %w; transcript rollback also failed: %v", err, rbErr)
+			}
+			return fmt.Errorf("sibling rename failed: %w", err)
+		}
 	}
 	return nil
 }

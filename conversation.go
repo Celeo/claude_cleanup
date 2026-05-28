@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -22,9 +23,17 @@ func LoadConversation(path string) ([]convoMessage, error) {
 		return nil, err
 	}
 	defer f.Close()
+	return parseConversation(f)
+}
 
+// parseConversation is the reader-shaped core of LoadConversation. Split out so
+// the record-filtering logic can be tested without touching the filesystem.
+func parseConversation(r io.Reader) ([]convoMessage, error) {
 	var msgs []convoMessage
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(r)
+	// Session records can carry large inline tool outputs; bufio's default 64K
+	// line limit trips on real files. 16MiB is comfortable headroom — anything
+	// beyond that spills into a sibling overflow directory we don't read here.
 	scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024)
 	for scanner.Scan() {
 		var rec struct {
@@ -63,6 +72,10 @@ func extractText(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
 	}
+	// Sniff the first byte to dispatch between the two content shapes Claude Code
+	// emits — a JSON string (typical for user turns) vs. an array of typed blocks
+	// (typical for assistant turns). Cheaper and clearer than decoding into
+	// interface{} and type-switching.
 	if raw[0] == '"' {
 		var s string
 		if err := json.Unmarshal(raw, &s); err == nil {

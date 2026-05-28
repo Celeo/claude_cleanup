@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -35,7 +37,11 @@ func LoadSessions() ([]Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return loadSessionsFromRoot(filepath.Join(home, ".claude", "projects"))
+	root := filepath.Join(home, ".claude", "projects")
+	if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	return loadSessionsFromRoot(root)
 }
 
 // loadSessionsFromRoot walks any root that uses the projects/<encoded>/<id>.jsonl
@@ -100,9 +106,14 @@ func pickTitle(path, id string) string {
 		return id
 	}
 	defer f.Close()
+	return pickTitleFromReader(f, id)
+}
 
+// pickTitleFromReader is the reader-shaped core of pickTitle. Split out so the
+// precedence logic can be tested without touching the filesystem.
+func pickTitleFromReader(r io.Reader, fallback string) string {
 	var customTitle, aiTitle, lastPrompt, firstPrompt string
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024)
 	for scanner.Scan() {
 		var head struct {
@@ -150,7 +161,7 @@ func pickTitle(path, id string) string {
 	case firstPrompt != "":
 		return truncate(firstPrompt, 80)
 	}
-	return id
+	return fallback
 }
 
 func truncate(s string, n int) string {

@@ -68,8 +68,12 @@ The directory layout mirrors `~/.claude/projects/`, so a restore is a plain `ren
 
 ## Contributing
 
-Issues and PRs welcome.
+Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the (short) checklist.
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## AI Tooling
+
+This tool was entirely written through Claude, my first time doing so. Besides this little bit of the README and copy-pasting the LICENSE, I didn't write any of this program.
